@@ -19,6 +19,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
+#include "cmsis_os2.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
@@ -311,8 +312,10 @@ void StartUART_Task(void *argument)
 void StartCAN_Task(void *argument)
 {
   /* USER CODE BEGIN StartCAN_Task */
+  osDelay(200);
   Motor_Init_All();
-
+  osDelay(100) ;
+//   motor1_out=55;
   /* Infinite loop */
   for(;;)
   {
