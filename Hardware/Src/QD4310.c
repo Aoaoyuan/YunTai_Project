@@ -40,13 +40,13 @@ void QD4310_SendCommand(QD4310_t *motor, QD4310_Command_t cmd, int16_t value) {
         // 通常可以在这里加一个简单的重试或错误标志
     }
 
-    // 4. 等待 FIFO 有空闲位置 (防止连续快速发送导致丢包)
-    // HAL_FDCAN_GetTxFifoFreeLevel 返回剩余空闲空间数量
-    while (HAL_FDCAN_GetTxFifoFreeLevel(motor->hfdcan) == 0)
-    {
-        // 可以添加看门狗喂狗或短暂延时，避免死循环看门狗复位
-        // __NOP(); 
-    }
+    // // 4. 等待 FIFO 有空闲位置 (防止连续快速发送导致丢包)
+    // // HAL_FDCAN_GetTxFifoFreeLevel 返回剩余空闲空间数量
+    // while (HAL_FDCAN_GetTxFifoFreeLevel(motor->hfdcan) == 0)
+    // {
+    //     // 可以添加看门狗喂狗或短暂延时，避免死循环看门狗复位
+    //     // __NOP(); 
+    // }
 }
 
 

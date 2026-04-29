@@ -19,13 +19,13 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "FreeRTOS.h"
-#include "cmsis_os2.h"
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "cmsis_os2.h"
 #include "niming.h"
 #include "usart.h"
 #include "OLED.h"
@@ -108,14 +108,14 @@ const osThreadAttr_t OLED_Task_attributes = {
 osThreadId_t UART_TaskHandle;
 const osThreadAttr_t UART_Task_attributes = {
   .name = "UART_Task",
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityBelowNormal,
   .stack_size = 128 * 4
 };
 /* Definitions for CAN_Task */
 osThreadId_t CAN_TaskHandle;
 const osThreadAttr_t CAN_Task_attributes = {
   .name = "CAN_Task",
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityBelowNormal,
   .stack_size = 128 * 4
 };
 /* Definitions for IMU_Task */
@@ -312,19 +312,13 @@ void StartUART_Task(void *argument)
 void StartCAN_Task(void *argument)
 {
   /* USER CODE BEGIN StartCAN_Task */
-  osDelay(200);
-  Motor_Init_All();
-  osDelay(100) ;
+
 //   motor1_out=55;
   /* Infinite loop */
   for(;;)
   {
-  osDelay(2);
-  Motor_Speed_Limit_All();
+  osDelay(200);
 
-  QD4310_SetSpeed(&Motor_0, motor0_out);
-  QD4310_SetSpeed(&Motor_1, motor1_out);
-  QD4310_SetSpeed(&Motor_2, motor2_out);
 
   }
   /* USER CODE END StartCAN_Task */
@@ -389,10 +383,27 @@ void StartIMU_Task(void *argument)
 void StartMotor_Control_Task(void *argument)
 {
   /* USER CODE BEGIN StartMotor_Control_Task */
+  osDelay(500);
+  Motor_Init_All();
+  osDelay(100) ;
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+// 1. 执行平衡解算 (计算 motor0/1/2_out)
+  Motor_Balance_Control();
+
+  // 2. 执行硬件限位保护 (修正 motor1/2_out)
+  Motor_Speed_Limit_All();
+
+  // 3. 发送最终指令给电机驱动
+  // 注意：这里直接调用 QD4310_SetSpeed，因为我们已经优化了驱动为非阻塞
+  QD4310_SetSpeed(&Motor_0, motor0_out);
+  QD4310_SetSpeed(&Motor_1, motor1_out);
+  QD4310_SetSpeed(&Motor_2, motor2_out);
+
+  // 4. 精确延时，控制回路频率
+  // osDelay(2) 意味着 500Hz 的控制频率
+  osDelay(2);
   }
   /* USER CODE END StartMotor_Control_Task */
 }
@@ -427,7 +438,18 @@ void StartAttitude_Task(void *argument)
 
             // 姿态解算
             Mahony_Update(gx, gy, gz, imu.ax, imu.ay, imu.az);
+
             Quat_To_Euler();
+            euler.roll=-euler.roll;
+            euler.roll += 180.0f;
+            if (euler.roll > 180.0f) euler.roll -= 360.0f;
+            if (euler.roll < -180.0f) euler.roll += 360.0f;
+            euler.pitch = -euler.pitch;
+            
+            // Yaw 处理：加 180 度并归一化到 -180~180
+            euler.yaw += 180.0f;
+            if (euler.yaw > 180.0f) euler.yaw -= 360.0f;
+            if (euler.yaw < -180.0f) euler.yaw += 360.0f;
       }
   }
   /* USER CODE END StartAttitude_Task */
