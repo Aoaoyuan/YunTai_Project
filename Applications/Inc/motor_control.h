@@ -34,6 +34,7 @@ typedef struct {
 extern uint8_t Balance_Mode_Enable; // 平衡模式开关
 extern float Target_Roll_Angle;     // 目标 Roll (度)
 extern float Target_Pitch_Angle;    // 目标 Pitch (度)
+extern float Target_Yaw_Angle;
 
 extern PID_TypeDef Pid_Roll;
 extern PID_TypeDef Pid_Pitch;

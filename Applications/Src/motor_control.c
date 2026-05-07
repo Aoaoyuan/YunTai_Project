@@ -25,7 +25,7 @@ uint8_t Balance_Mode_Enable = 0; // 0:关闭, 1:开启自稳
 
 float Target_Roll_Angle = 0.0f;
 float Target_Pitch_Angle = 0.0f;
-
+float Target_Yaw_Angle = 0.0f;
 /* === IMU 零点校准偏移 (单位: 度) === */
 // 调试方法：把云台调到肉眼水平，观察 OLED 上的 R: 值。
 // 如果显示 R: 3.5，则把 ROLL_OFFSET_DEG 设为 3.5
@@ -46,16 +46,21 @@ float Target_Pitch_Angle = 0.0f;
 // PID_TypeDef Pid_Roll  = { .Kp = 300.0f, .Ki = 10.0f, .Kd = 0.2f, .output_limit = 50.0f };
 // PID_TypeDef Pid_Pitch = { .Kp = 10.0f, .Ki = 0.0f, .Kd = 0.2f, .output_limit = 30.0f };
 
-
+// Yaw 轴 (M0)
+#define YAW_KP      25.0f
+#define YAW_KI      0.0f
+#define YAW_KD      0.3f
+#define YAW_INTEGRAL_LIMIT 30.0f  // 积分限幅（根据表现再放宽或收紧）
+#define YAW_OUTPUT_LIMIT 200.0f   // rad/s，根据实际响应调整
 /* === 非对称 PID 参数配置 === */
 // Roll 轴 (M1)
-#define ROLL_KP_POS   40.0f   // 正角度（例如向右）时的 Kp
-#define ROLL_KD_POS   20.5f    // 正角度时的 Kd
-#define ROLL_KP_NEG   800.0f   // 负角度（例如向左）时的 Kp
-#define ROLL_KD_NEG   20.5f    // 负角度时的 Kd
-#define ROLL_KI_POS   01.0f    // 正角度时的 Ki，起始值建议小
-#define ROLL_KI_NEG   01.0f    // 负角度时的 Ki，起始值建议更小
-#define ROLL_INTEGRAL_LIMIT 20.0f  // 积分限幅（根据表现再放宽或收紧）
+#define ROLL_KP_POS   30.0f   // 正角度（例如向右）时的 Kp
+#define ROLL_KD_POS   0.50f    // 正角度时的 Kd
+#define ROLL_KP_NEG   30.0f   // 负角度（例如向左）时的 Kp
+#define ROLL_KD_NEG   0.50f    // 负角度时的 Kd
+#define ROLL_KI_POS   0.0f    // 正角度时的 Ki，起始值建议小
+#define ROLL_KI_NEG   0.0f    // 负角度时的 Ki，起始值建议更小
+#define ROLL_INTEGRAL_LIMIT 30.0f  // 积分限幅（根据表现再放宽或收紧）
 
 // Pitch 轴 (M2) - 同理可设
 #define PITCH_KP_POS  40.0f
@@ -91,7 +96,7 @@ float Target_Pitch_Angle = 0.0f;
   *       由于 QD4310 是速度环控制，我们需要将 力矩(N.m) 映射为 速度(rad/s)
   *       这里引入一个经验系数 K_GRAVITY_TO_SPEED
   */
-#define K_GRAVITY_TO_SPEED  100.0f  // 经验系数：需要调试，表示 1 N.m 力矩对应多少 rad/s 的速度指令
+#define K_GRAVITY_TO_SPEED  0.0f  // 经验系数：需要调试，表示 1 N.m 力矩对应多少 rad/s 的速度指令
 
 static float Calculate_Gravity_Compensation_Roll(float roll_rad)
 {
@@ -365,8 +370,105 @@ static float PID_Compute(PID_TypeDef *pid, float target, float measure, float dt
 // }
 
 
+// /**
+//   * @brief 平衡控制主函数
+//   */
+// void Motor_Balance_Control(void)
+// {
+//     if (!Balance_Mode_Enable) 
+//     {
+//         motor1_out = 0.0f;
+//         motor2_out = 0.0f;
+//         return; 
+//     }
+
+//     const float dt = 0.002f; 
+// // 1. 获取原始姿态并【减去零点偏移】
+//     float raw_roll_deg  = euler.roll - ROLL_OFFSET_DEG;
+//     float raw_pitch_deg = euler.pitch - PITCH_OFFSET_DEG;
+
+//     // 转换为弧度
+//     float current_roll_rad  = raw_roll_deg * (float)M_PI / 180.0f;
+//     float current_pitch_rad = raw_pitch_deg * (float)M_PI / 180.0f;
+    
+//     float target_roll_rad  = Target_Roll_Angle * (float)M_PI / 180.0f;
+//     float target_pitch_rad = Target_Pitch_Angle * (float)M_PI / 180.0f;
+//     // 2. 计算重力补偿 (前馈)
+//     float gravity_comp_roll  = Calculate_Gravity_Compensation_Roll(current_roll_rad);
+//     float gravity_comp_pitch = Calculate_Gravity_Compensation_Pitch(current_pitch_rad);
+
+//     // 3. 计算误差
+//     float error_roll  = target_roll_rad - current_roll_rad;
+//     float error_pitch = target_pitch_rad - current_pitch_rad;
+
+//     /* 4. 选择非对称 P、D、I */
+//     float kp_roll, kd_roll, ki_roll;
+//     float kp_pitch, kd_pitch;
+
+//     if (error_roll > 0.0f) {
+//         kp_roll = ROLL_KP_POS;
+//         kd_roll = ROLL_KD_POS;
+//         ki_roll = ROLL_KI_POS;
+//     } else {
+//         kp_roll = ROLL_KP_NEG;
+//         kd_roll = ROLL_KD_NEG;
+//         ki_roll = ROLL_KI_NEG;
+//     }
+
+//     if (error_pitch > 0.0f) {
+//         kp_pitch = PITCH_KP_POS;
+//         kd_pitch = PITCH_KD_POS;
+//     } else {
+//         kp_pitch = PITCH_KP_NEG;
+//         kd_pitch = PITCH_KD_NEG;
+//     }
+
+//     /* 5. 积分 + 微分 状态（静态变量保留跨次采样） */
+//     static float last_error_roll = 0.0f;
+//     static float last_error_pitch = 0.0f;
+//     static float integral_roll = 0.0f;
+//     static int last_sign_roll = 0;
+
+//     int sign_roll = (error_roll > 0.0f) ? 1 : (error_roll < 0.0f) ? -1 : 0;
+//     /* 跨零清积分，避免反向大积分 */
+//     if (sign_roll != last_sign_roll) {
+//         integral_roll = 0.0f;
+//         last_sign_roll = sign_roll;
+//     }
+
+//     /* 积分累加与限幅（防止积分风暴） */
+//     integral_roll += error_roll * dt;
+//     if (integral_roll > ROLL_INTEGRAL_LIMIT) integral_roll = ROLL_INTEGRAL_LIMIT;
+//     if (integral_roll < -ROLL_INTEGRAL_LIMIT) integral_roll = -ROLL_INTEGRAL_LIMIT;
+
+//     /* 微分项 */
+//     float derivative_roll  = (error_roll - last_error_roll) / dt;
+//     float derivative_pitch = (error_pitch - last_error_pitch) / dt;
+
+//     last_error_roll  = error_roll;
+//     last_error_pitch = error_pitch;
+
+//     /* 6. PID 输出（包含积分） */
+//     float pid_out_roll  = (kp_roll * error_roll) + (ki_roll * integral_roll) + (kd_roll * derivative_roll);
+//     float pid_out_pitch = (kp_pitch * error_pitch) + (kd_pitch * derivative_pitch);
+//     // 6. 最终输出 = 前馈 + 反馈
+//     // 注意：这里的正负号需要根据你之前的调试结果确定
+//     motor1_out = -gravity_comp_roll +pid_out_roll ;  //
+//     motor2_out = -gravity_comp_pitch +pid_out_pitch ; //
+    
+//     // 7. 全局限幅
+//     if (motor1_out > MOTOR_OUTPUT_LIMIT) motor1_out = MOTOR_OUTPUT_LIMIT;
+//     if (motor1_out < -MOTOR_OUTPUT_LIMIT) motor1_out = -MOTOR_OUTPUT_LIMIT;
+//     if (motor2_out > MOTOR_OUTPUT_LIMIT) motor2_out = MOTOR_OUTPUT_LIMIT;
+//     if (motor2_out < -MOTOR_OUTPUT_LIMIT) motor2_out = -MOTOR_OUTPUT_LIMIT;
+    
+//     motor0_out = 0.0f; 
+// }
+
+
 /**
-  * @brief 平衡控制主函数
+  * @brief 平衡控制主函数（包含 Roll, Pitch, Yaw）
+  * @note 建议 500Hz 调用 (dt = 0.002s)
   */
 void Motor_Balance_Control(void)
 {
@@ -374,32 +476,20 @@ void Motor_Balance_Control(void)
     {
         motor1_out = 0.0f;
         motor2_out = 0.0f;
+        motor0_out = 0.0f;
         return; 
     }
 
     const float dt = 0.002f; 
-// 1. 获取原始姿态并【减去零点偏移】
+
+    // ====================== Roll 轴 (M1) ======================
     float raw_roll_deg  = euler.roll - ROLL_OFFSET_DEG;
-    float raw_pitch_deg = euler.pitch - PITCH_OFFSET_DEG;
-
-    // 转换为弧度
     float current_roll_rad  = raw_roll_deg * (float)M_PI / 180.0f;
-    float current_pitch_rad = raw_pitch_deg * (float)M_PI / 180.0f;
-    
     float target_roll_rad  = Target_Roll_Angle * (float)M_PI / 180.0f;
-    float target_pitch_rad = Target_Pitch_Angle * (float)M_PI / 180.0f;
-    // 2. 计算重力补偿 (前馈)
-    float gravity_comp_roll  = Calculate_Gravity_Compensation_Roll(current_roll_rad);
-    float gravity_comp_pitch = Calculate_Gravity_Compensation_Pitch(current_pitch_rad);
+    float gravity_comp_roll = Calculate_Gravity_Compensation_Roll(current_roll_rad);
 
-    // 3. 计算误差
-    float error_roll  = target_roll_rad - current_roll_rad;
-    float error_pitch = target_pitch_rad - current_pitch_rad;
-
-    /* 4. 选择非对称 P、D、I */
+    float error_roll = target_roll_rad - current_roll_rad;
     float kp_roll, kd_roll, ki_roll;
-    float kp_pitch, kd_pitch;
-
     if (error_roll > 0.0f) {
         kp_roll = ROLL_KP_POS;
         kd_roll = ROLL_KD_POS;
@@ -410,6 +500,32 @@ void Motor_Balance_Control(void)
         ki_roll = ROLL_KI_NEG;
     }
 
+    static float last_error_roll = 0.0f;
+    static float integral_roll = 0.0f;
+    static int last_sign_roll = 0;
+    int sign_roll = (error_roll > 0.0f) ? 1 : (error_roll < 0.0f) ? -1 : 0;
+    if (sign_roll != last_sign_roll) {
+        integral_roll = 0.0f;
+        last_sign_roll = sign_roll;
+    }
+    integral_roll += error_roll * dt;
+    if (integral_roll > ROLL_INTEGRAL_LIMIT) integral_roll = ROLL_INTEGRAL_LIMIT;
+    if (integral_roll < -ROLL_INTEGRAL_LIMIT) integral_roll = -ROLL_INTEGRAL_LIMIT;
+
+    float derivative_roll = (error_roll - last_error_roll) / dt;
+    last_error_roll = error_roll;
+
+    float pid_out_roll = kp_roll * error_roll + ki_roll * integral_roll + kd_roll * derivative_roll;
+    motor1_out = -gravity_comp_roll + pid_out_roll;
+
+    // ====================== Pitch 轴 (M2) ======================
+    float raw_pitch_deg = euler.pitch - PITCH_OFFSET_DEG;
+    float current_pitch_rad = raw_pitch_deg * (float)M_PI / 180.0f;
+    float target_pitch_rad = Target_Pitch_Angle * (float)M_PI / 180.0f;
+    float gravity_comp_pitch = Calculate_Gravity_Compensation_Pitch(current_pitch_rad);
+
+    float error_pitch = target_pitch_rad - current_pitch_rad;
+    float kp_pitch, kd_pitch;
     if (error_pitch > 0.0f) {
         kp_pitch = PITCH_KP_POS;
         kd_pitch = PITCH_KD_POS;
@@ -418,48 +534,61 @@ void Motor_Balance_Control(void)
         kd_pitch = PITCH_KD_NEG;
     }
 
-    /* 5. 积分 + 微分 状态（静态变量保留跨次采样） */
-    static float last_error_roll = 0.0f;
     static float last_error_pitch = 0.0f;
-    static float integral_roll = 0.0f;
-    static int last_sign_roll = 0;
-
-    int sign_roll = (error_roll > 0.0f) ? 1 : (error_roll < 0.0f) ? -1 : 0;
-    /* 跨零清积分，避免反向大积分 */
-    if (sign_roll != last_sign_roll) {
-        integral_roll = 0.0f;
-        last_sign_roll = sign_roll;
+    static float integral_pitch = 0.0f;      // Pitch 可选用积分，此处保留但未用
+    static int last_sign_pitch = 0;
+    int sign_pitch = (error_pitch > 0.0f) ? 1 : (error_pitch < 0.0f) ? -1 : 0;
+    if (sign_pitch != last_sign_pitch) {
+        integral_pitch = 0.0f;
+        last_sign_pitch = sign_pitch;
     }
-
-    /* 积分累加与限幅（防止积分风暴） */
-    integral_roll += error_roll * dt;
-    if (integral_roll > ROLL_INTEGRAL_LIMIT) integral_roll = ROLL_INTEGRAL_LIMIT;
-    if (integral_roll < -ROLL_INTEGRAL_LIMIT) integral_roll = -ROLL_INTEGRAL_LIMIT;
-
-    /* 微分项 */
-    float derivative_roll  = (error_roll - last_error_roll) / dt;
+    integral_pitch += error_pitch * dt;
+    // 若需要积分限幅，可自行添加宏，此处暂不启用积分
     float derivative_pitch = (error_pitch - last_error_pitch) / dt;
-
-    last_error_roll  = error_roll;
     last_error_pitch = error_pitch;
 
-    /* 6. PID 输出（包含积分） */
-    float pid_out_roll  = (kp_roll * error_roll) + (ki_roll * integral_roll) + (kd_roll * derivative_roll);
-    float pid_out_pitch = (kp_pitch * error_pitch) + (kd_pitch * derivative_pitch);
-    // 6. 最终输出 = 前馈 + 反馈
-    // 注意：这里的正负号需要根据你之前的调试结果确定
-    motor1_out = -gravity_comp_roll +pid_out_roll ;  //
-    motor2_out = -gravity_comp_pitch +pid_out_pitch ; //
-    
-    // 7. 全局限幅
+    float pid_out_pitch = kp_pitch * error_pitch + kd_pitch * derivative_pitch;   // 未使用积分
+    motor2_out = -gravity_comp_pitch + pid_out_pitch;
+
+    // ====================== Yaw 轴 (M0) ======================
+    // 注：需要全局变量 Target_Yaw_Angle (度)
+    extern float Target_Yaw_Angle;          // 在 motor_control.h 中声明
+    float target_yaw_rad = Target_Yaw_Angle * (float)M_PI / 180.0f;
+    float current_yaw_rad = euler.yaw * (float)M_PI / 180.0f;   // euler.yaw 范围假设为 ±180°
+
+    // 误差归一化到 [-pi, pi] 区间，避免 360° 跳变
+    float error_yaw = target_yaw_rad - current_yaw_rad;
+    error_yaw = fmodf(error_yaw, 2.0f * (float)M_PI);
+    if (error_yaw > (float)M_PI) error_yaw -= 2.0f * (float)M_PI;
+    if (error_yaw < -(float)M_PI) error_yaw += 2.0f * (float)M_PI;
+
+    // 静态 PID 变量 (Yaw 通常不需要积分，但预留)
+    static float last_error_yaw = 0.0f;
+    static float integral_yaw = 0.0f;
+    static int last_sign_yaw = 0;
+    int sign_yaw = (error_yaw > 0.0f) ? 1 : (error_yaw < 0.0f) ? -1 : 0;
+    if (sign_yaw != last_sign_yaw) {
+        integral_yaw = 0.0f;
+        last_sign_yaw = sign_yaw;
+    }
+    integral_yaw += error_yaw * dt;
+    if (integral_yaw > YAW_INTEGRAL_LIMIT) integral_yaw = YAW_INTEGRAL_LIMIT;
+    if (integral_yaw < -YAW_INTEGRAL_LIMIT) integral_yaw = -YAW_INTEGRAL_LIMIT;
+
+    float derivative_yaw = (error_yaw - last_error_yaw) / dt;
+    last_error_yaw = error_yaw;
+
+    float pid_out_yaw = YAW_KP * error_yaw + YAW_KI * integral_yaw + YAW_KD * derivative_yaw;
+    motor0_out = pid_out_yaw;   // Yaw 轴无重力补偿
+
+    // ====================== 全轴输出限幅 ======================
+    if (motor0_out > MOTOR_OUTPUT_LIMIT) motor0_out = MOTOR_OUTPUT_LIMIT;
+    if (motor0_out < -MOTOR_OUTPUT_LIMIT) motor0_out = -MOTOR_OUTPUT_LIMIT;
     if (motor1_out > MOTOR_OUTPUT_LIMIT) motor1_out = MOTOR_OUTPUT_LIMIT;
     if (motor1_out < -MOTOR_OUTPUT_LIMIT) motor1_out = -MOTOR_OUTPUT_LIMIT;
     if (motor2_out > MOTOR_OUTPUT_LIMIT) motor2_out = MOTOR_OUTPUT_LIMIT;
     if (motor2_out < -MOTOR_OUTPUT_LIMIT) motor2_out = -MOTOR_OUTPUT_LIMIT;
-    
-    motor0_out = 0.0f; 
 }
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
