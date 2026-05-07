@@ -85,7 +85,16 @@ extern QD4310_t Motor_2;
 // extern float motor1_out = 0.0f;
 // extern float motor2_out = 0.0f;
 
-
+// === 无停止二次校准（在闭环中采集） ===
+static uint8_t gyro_recalib_done = 0;
+static uint32_t stable_start_time = 0;
+static uint8_t calib_state = 0;      // 0:空闲, 1:采集中
+static float calib_sum_gx = 0, calib_sum_gy = 0, calib_sum_gz = 0;
+static uint16_t calib_count = 0;
+#define CALIB_SAMPLE_NUM    500      // 采样次数（约200ms）
+#define CALIB_GYRO_THRESH   2.0f     // 角速度阈值 dps
+#define STABLE_THRESHOLD_DEG  0.5f     // 误差小于0.5°视为稳定
+#define STABLE_DURATION_MS    2000     // 稳定持续5秒后触发校准
 // 陀螺仪校准偏移
 float gx_offset = 0, gy_offset = 0, gz_offset = 0;
 
@@ -243,7 +252,7 @@ void StartLED_Task(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(500);
+    osDelay(5000);
     HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
   }
   /* USER CODE END StartLED_Task */
@@ -423,33 +432,107 @@ void StartAttitude_Task(void *argument)
   for(;;)
   {
       if(osMessageQueueGet(IMU_Data_QueueHandle, &imu, 0, osWaitForever) == osOK)
-      {
-            // 1. 减偏移
-            float gx_raw = imu.gx - gx_offset;
-            float gy_raw = imu.gy - gy_offset;
-            float gz_raw = imu.gz - gz_offset;
+  {
+        // 1. 减偏移
+        float gx_raw = imu.gx - gx_offset;
+        float gy_raw = imu.gy - gy_offset;
+        float gz_raw = imu.gz - gz_offset;
 
-            // ======================
+        // ======================
 
-            // ======================
-            float gx = gx_raw / 16.4f;
-            float gy = gy_raw / 16.4f;
-            float gz = gz_raw / 8.2f; //出于某种未知原因输出的raw差了一倍，所以直接在这里加倍了
+        // ======================
+        float gx = gx_raw / 16.4f;
+        float gy = gy_raw / 16.4f;
+        float gz = gz_raw / 8.2f; //出于某种未知原因输出的raw差了一倍，所以直接在这里加倍了
 
-            // 姿态解算
-            Mahony_Update(gx, gy, gz, imu.ax, imu.ay, imu.az);
+        // 姿态解算
+        Mahony_Update(gx, gy, gz, imu.ax, imu.ay, imu.az);
 
-            Quat_To_Euler();
-            euler.roll=-euler.roll;
-            euler.roll += 180.0f;
-            if (euler.roll > 180.0f) euler.roll -= 360.0f;
-            if (euler.roll < -180.0f) euler.roll += 360.0f;
-            euler.pitch = -euler.pitch;
-            
-            // Yaw 处理：加 180 度并归一化到 -180~180
-            euler.yaw += 180.0f;
-            if (euler.yaw > 180.0f) euler.yaw -= 360.0f;
-            if (euler.yaw < -180.0f) euler.yaw += 360.0f;
+        Quat_To_Euler();
+        euler.roll=-euler.roll;
+        euler.roll += 180.0f;
+        if (euler.roll > 180.0f) euler.roll -= 360.0f;
+        if (euler.roll < -180.0f) euler.roll += 360.0f;
+        euler.pitch = -euler.pitch;
+        
+        // Yaw 处理：加 180 度并归一化到 -180~180
+        euler.yaw += 180.0f;
+        if (euler.yaw > 180.0f) euler.yaw -= 360.0f;
+        if (euler.yaw < -180.0f) euler.yaw += 360.0f;
+
+          
+        // ========== 二次校准（无停电机） ==========
+        if (Balance_Mode_Enable && !gyro_recalib_done)
+        {
+            // 阶段1：稳定检测
+            if (calib_state == 0)
+            {
+                float err_roll  = fabsf(euler.roll - Target_Roll_Angle);
+
+                float err_pitch = fabsf(euler.pitch - Target_Pitch_Angle);
+
+                if (err_roll < STABLE_THRESHOLD_DEG && err_pitch < STABLE_THRESHOLD_DEG)
+                {
+                    if (stable_start_time == 0)
+                        stable_start_time = osKernelGetTickCount();
+                    else if ((osKernelGetTickCount() - stable_start_time) >= STABLE_DURATION_MS)
+                    {
+                        // 进入采集状态
+                        calib_state = 1;
+                        calib_sum_gx = calib_sum_gy = calib_sum_gz = 0;
+                        calib_count = 0;
+                        stable_start_time = 0;
+                    }
+                }
+                else
+                {
+                    stable_start_time = 0;
+                }
+            }
+            // 阶段2：采集原始陀螺仪数据（减当前偏移后仍接近0）
+            else if (calib_state == 1)
+            {
+                // 获取原始物理值（dps），未经过偏移修正
+                float raw_gx = imu.gx;   // ICM42688_Read_All 已经转为 dps，存在 imu.gx 中
+                float raw_gy = imu.gy;
+                float raw_gz = imu.gz;
+                
+                // 检查角速度是否足够小（说明云台基本静止）
+                if (fabsf(raw_gx) < CALIB_GYRO_THRESH &&
+                    fabsf(raw_gy) < CALIB_GYRO_THRESH &&
+                    fabsf(raw_gz) < CALIB_GYRO_THRESH)
+                {
+                    calib_sum_gx += raw_gx;
+                    calib_sum_gy += raw_gy;
+                    calib_sum_gz += raw_gz;
+                    calib_count++;
+                }
+                
+                if (calib_count >= CALIB_SAMPLE_NUM)
+                {
+                    // 计算新的偏移量（取平均）
+                    float new_gx_off = calib_sum_gx / CALIB_SAMPLE_NUM;
+                    float new_gy_off = calib_sum_gy / CALIB_SAMPLE_NUM;
+                    float new_gz_off = calib_sum_gz / CALIB_SAMPLE_NUM;
+                    
+                    // 更新全局偏移
+                    gx_offset = new_gx_off;
+                    gy_offset = new_gy_off;
+                    gz_offset = new_gz_off;
+                    
+                    // 重置 Mahony 滤波器（清除累积误差）
+                    Mahony_Init(15.0f, 0.0f);
+                    
+                    // 标记完成
+                    gyro_recalib_done = 1;
+                    calib_state = 0;
+                    
+                    // 串口输出提示
+                    char msg[] = "\r\nGyro recalibrated without motor stop!\r\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+                }
+            }
+          }
       }
   }
   /* USER CODE END StartAttitude_Task */

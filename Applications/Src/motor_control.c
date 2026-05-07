@@ -23,13 +23,13 @@ float motor2_out = 0.0f;
 /* === 平衡模式配置 === */
 uint8_t Balance_Mode_Enable = 0; // 0:关闭, 1:开启自稳
 
-float Target_Roll_Angle = 0.0f;
+float Target_Roll_Angle = -6.0f;
 float Target_Pitch_Angle = 0.0f;
 float Target_Yaw_Angle = 0.0f;
 /* === IMU 零点校准偏移 (单位: 度) === */
 // 调试方法：把云台调到肉眼水平，观察 OLED 上的 R: 值。
 // 如果显示 R: 3.5，则把 ROLL_OFFSET_DEG 设为 3.5
-#define ROLL_OFFSET_DEG   -6.0f  
+#define ROLL_OFFSET_DEG   0.0f  
 #define PITCH_OFFSET_DEG  0.0f
 /* === 重力补偿物理参数 (需根据实际硬件填写) === */
 // M1 (Roll): 假设负载 0.2kg, 质心距轴 0.05m
@@ -47,7 +47,7 @@ float Target_Yaw_Angle = 0.0f;
 // PID_TypeDef Pid_Pitch = { .Kp = 10.0f, .Ki = 0.0f, .Kd = 0.2f, .output_limit = 30.0f };
 
 // Yaw 轴 (M0)
-#define YAW_KP      25.0f
+#define YAW_KP      30.0f
 #define YAW_KI      0.0f
 #define YAW_KD      0.3f
 #define YAW_INTEGRAL_LIMIT 30.0f  // 积分限幅（根据表现再放宽或收紧）
@@ -621,6 +621,5 @@ void Motor_Init_All(void)
     QD4310_SetSpeed(&Motor_2, 0);
 
     Balance_Mode_Enable = 1; // 初始化完成后开启自稳
-    Target_Roll_Angle = 0.0f;
-    Target_Pitch_Angle = 0.0f;
+
 }
