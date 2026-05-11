@@ -39,8 +39,13 @@ extern float Target_Yaw_Angle;
 extern PID_TypeDef Pid_Roll;
 extern PID_TypeDef Pid_Pitch;
 
+extern float yaw_zero_offset;       // 上电时的 yaw 初始零点(度)
+
+
+
+
 void Motor_Speed_Limit_All(void);
 void Motor_Init_All(void);
 void Motor_Balance_Control(void);   
-
+void Set_Target_Angles(float roll_deg, float pitch_deg, float yaw_deg);
 #endif

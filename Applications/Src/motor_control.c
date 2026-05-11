@@ -14,6 +14,9 @@ extern QD4310_t Motor_0;
 extern QD4310_t Motor_1;
 extern QD4310_t Motor_2;
 
+
+
+
 float motor0_out = 0.0f;
 float motor1_out = 0.0f;
 float motor2_out = 0.0f;
@@ -26,6 +29,8 @@ uint8_t Balance_Mode_Enable = 0; // 0:关闭, 1:开启自稳
 float Target_Roll_Angle = -6.0f;
 float Target_Pitch_Angle = 0.0f;
 float Target_Yaw_Angle = 0.0f;
+float yaw_zero_offset = 0.0f;       // 上电自动标定
+
 /* === IMU 零点校准偏移 (单位: 度) === */
 // 调试方法：把云台调到肉眼水平，观察 OLED 上的 R: 值。
 // 如果显示 R: 3.5，则把 ROLL_OFFSET_DEG 设为 3.5
@@ -77,7 +82,7 @@ float Target_Yaw_Angle = 0.0f;
 
 /* === 零点偏移配置 (rad) === */
 #define ZERO_OFFSET_M0 0.0f 
-#define ZERO_OFFSET_M1 0.25f 
+#define ZERO_OFFSET_M1 -0.05f 
 #define ZERO_OFFSET_M2 0.15f 
 
 /* === 避障分界点 (rad) === */
@@ -550,11 +555,41 @@ void Motor_Balance_Control(void)
     float pid_out_pitch = kp_pitch * error_pitch + kd_pitch * derivative_pitch;   // 未使用积分
     motor2_out = -gravity_comp_pitch + pid_out_pitch;
 
+    // // ====================== Yaw 轴 (M0) ======================
+    // // 注：需要全局变量 Target_Yaw_Angle (度)
+    // float target_yaw_rad = Target_Yaw_Angle * (float)M_PI / 180.0f;
+    // float current_yaw_rad = euler.yaw * (float)M_PI / 180.0f;   // euler.yaw 范围假设为 ±180°
+
+    // // 误差归一化到 [-pi, pi] 区间，避免 360° 跳变
+    // float error_yaw = target_yaw_rad - current_yaw_rad;
+    // error_yaw = fmodf(error_yaw, 2.0f * (float)M_PI);
+    // if (error_yaw > (float)M_PI) error_yaw -= 2.0f * (float)M_PI;
+    // if (error_yaw < -(float)M_PI) error_yaw += 2.0f * (float)M_PI;
+
+    // // 静态 PID 变量 (Yaw 通常不需要积分，但预留)
+    // static float last_error_yaw = 0.0f;
+    // static float integral_yaw = 0.0f;
+    // static int last_sign_yaw = 0;
+    // int sign_yaw = (error_yaw > 0.0f) ? 1 : (error_yaw < 0.0f) ? -1 : 0;
+    // if (sign_yaw != last_sign_yaw) {
+    //     integral_yaw = 0.0f;
+    //     last_sign_yaw = sign_yaw;
+    // }
+    // integral_yaw += error_yaw * dt;
+    // if (integral_yaw > YAW_INTEGRAL_LIMIT) integral_yaw = YAW_INTEGRAL_LIMIT;
+    // if (integral_yaw < -YAW_INTEGRAL_LIMIT) integral_yaw = -YAW_INTEGRAL_LIMIT;
+
+    // float derivative_yaw = (error_yaw - last_error_yaw) / dt;
+    // last_error_yaw = error_yaw;
+
+    // float pid_out_yaw = YAW_KP * error_yaw + YAW_KI * integral_yaw + YAW_KD * derivative_yaw;
+    // motor0_out = pid_out_yaw;   // Yaw 轴无重力补偿
     // ====================== Yaw 轴 (M0) ======================
-    // 注：需要全局变量 Target_Yaw_Angle (度)
-    extern float Target_Yaw_Angle;          // 在 motor_control.h 中声明
     float target_yaw_rad = Target_Yaw_Angle * (float)M_PI / 180.0f;
-    float current_yaw_rad = euler.yaw * (float)M_PI / 180.0f;   // euler.yaw 范围假设为 ±180°
+
+    // 计算相对于上电零点的实际 yaw 角度
+    float current_yaw_relative = euler.yaw - yaw_zero_offset;
+    float current_yaw_rad = current_yaw_relative * (float)M_PI / 180.0f;
 
     // 误差归一化到 [-pi, pi] 区间，避免 360° 跳变
     float error_yaw = target_yaw_rad - current_yaw_rad;
@@ -562,7 +597,7 @@ void Motor_Balance_Control(void)
     if (error_yaw > (float)M_PI) error_yaw -= 2.0f * (float)M_PI;
     if (error_yaw < -(float)M_PI) error_yaw += 2.0f * (float)M_PI;
 
-    // 静态 PID 变量 (Yaw 通常不需要积分，但预留)
+    // 静态 PID 变量
     static float last_error_yaw = 0.0f;
     static float integral_yaw = 0.0f;
     static int last_sign_yaw = 0;
@@ -579,7 +614,7 @@ void Motor_Balance_Control(void)
     last_error_yaw = error_yaw;
 
     float pid_out_yaw = YAW_KP * error_yaw + YAW_KI * integral_yaw + YAW_KD * derivative_yaw;
-    motor0_out = pid_out_yaw;   // Yaw 轴无重力补偿
+    motor0_out = pid_out_yaw;
 
     // ====================== 全轴输出限幅 ======================
     if (motor0_out > MOTOR_OUTPUT_LIMIT) motor0_out = MOTOR_OUTPUT_LIMIT;
@@ -593,7 +628,30 @@ void Motor_Balance_Control(void)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-
+/**
+  * @brief 设定三轴目标跟踪角度（度）
+  * @param roll_deg  目标 Roll  角度，限幅 ±45°
+  * @param pitch_deg 目标 Pitch 角度，限幅 ±45°
+  * @param yaw_deg   目标 Yaw   角度（相对上电零位），无硬限幅（可按需添加 ±180° 限制）
+  */
+void Set_Target_Angles(float roll_deg, float pitch_deg, float yaw_deg)
+{
+    // Roll 限幅
+    if (roll_deg > 90.0f )  roll_deg = 90.0f ;
+    if (roll_deg < 90.0f) roll_deg = 90.0f;
+    
+    // Pitch 限幅
+    if (pitch_deg > 45.0f)  pitch_deg = 45.0f;
+    if (pitch_deg < -45.0f) pitch_deg = -45.0f;
+    
+    // Yaw 不限幅（若需要，可加入 -180～180 限幅）
+    // if (yaw_deg > 180.0f) yaw_deg = 180.0f;
+    // if (yaw_deg < -180.0f) yaw_deg = -180.0f;
+    
+    Target_Roll_Angle  = roll_deg;
+    Target_Pitch_Angle = pitch_deg;
+    Target_Yaw_Angle   = yaw_deg;
+}
 /**
   * @brief 初始化所有电机（使能、速度环归零）
   */
@@ -619,6 +677,11 @@ void Motor_Init_All(void)
     QD4310_SetSpeed(&Motor_0, 0);
     QD4310_SetSpeed(&Motor_1, 0);
     QD4310_SetSpeed(&Motor_2, 0);
+
+     // ---- 自动 Yaw 归零 ----
+    osDelay(200);                            // 等待姿态解算稳定
+    yaw_zero_offset = euler.yaw;            // 记录当前朝向作为零度
+    Target_Yaw_Angle = 0.0f;                // 默认希望保持当前朝向
 
     Balance_Mode_Enable = 1; // 初始化完成后开启自稳
 

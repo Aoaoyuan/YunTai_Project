@@ -427,6 +427,7 @@ void StartMotor_Control_Task(void *argument)
 void StartAttitude_Task(void *argument)
 {
   /* USER CODE BEGIN StartAttitude_Task */
+  // osDelay(1000); // 等待系统稳定
   Mahony_Init(15.0f, 0.0f);
   IMU_Data_t imu;
   for(;;)
