@@ -38,6 +38,11 @@
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
+/* 按键引脚定义 */
+#define KEY1_PORT   GPIOC
+#define KEY1_PIN    GPIO_PIN_8
+#define KEY2_PORT   GPIOC
+#define KEY2_PIN    GPIO_PIN_7
 /* USER CODE BEGIN PTD */
 typedef struct {
     float ax, ay, az;
@@ -148,6 +153,13 @@ const osThreadAttr_t Attitude_Task_attributes = {
   .priority = (osPriority_t) osPriorityNormal,
   .stack_size = 128 * 4
 };
+/* Definitions for KEY_Task */
+osThreadId_t KEY_TaskHandle;
+const osThreadAttr_t KEY_Task_attributes = {
+  .name = "KEY_Task",
+  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 128 * 4
+};
 /* Definitions for IMU_Data_Queue */
 osMessageQueueId_t IMU_Data_QueueHandle;
 const osMessageQueueAttr_t IMU_Data_Queue_attributes = {
@@ -171,6 +183,7 @@ void StartCAN_Task(void *argument);
 void StartIMU_Task(void *argument);
 void StartMotor_Control_Task(void *argument);
 void StartAttitude_Task(void *argument);
+void StartKEY_Task(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -229,6 +242,9 @@ void MX_FREERTOS_Init(void) {
   /* creation of Attitude_Task */
   Attitude_TaskHandle = osThreadNew(StartAttitude_Task, NULL, &Attitude_Task_attributes);
 
+  /* creation of KEY_Task */
+  KEY_TaskHandle = osThreadNew(StartKEY_Task, NULL, &KEY_Task_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
@@ -241,10 +257,10 @@ void MX_FREERTOS_Init(void) {
 
 /* USER CODE BEGIN Header_StartLED_Task */
 /**
-* @brief Function implementing the LED_Task thread.
-* @param argument: Not used
-* @retval None
-*/
+  * @brief  Function implementing the LED_Task thread.
+  * @param  argument: Not used
+  * @retval None
+  */
 /* USER CODE END Header_StartLED_Task */
 void StartLED_Task(void *argument)
 {
@@ -252,8 +268,19 @@ void StartLED_Task(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(5000);
-    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
+  uint32_t led_tick = 0;
+  const uint32_t LED_PERIOD_MS = 5000;
+    for(;;)
+    {
+      osDelay(100);                  // 100ms 周期
+      led_tick += 100;
+
+      if (led_tick >= LED_PERIOD_MS)
+      {
+        led_tick = 0;
+        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
+      }
+    }  
   }
   /* USER CODE END StartLED_Task */
 }
@@ -537,6 +564,88 @@ void StartAttitude_Task(void *argument)
       }
   }
   /* USER CODE END StartAttitude_Task */
+}
+
+/* USER CODE BEGIN Header_StartKEY_Task */
+/**
+* @brief Function implementing the KEY_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartKEY_Task */
+void StartKEY_Task(void *argument)
+{
+  /* USER CODE BEGIN StartKEY_Task */
+  /* Infinite loop */
+ // 消抖状态机
+  enum { KS_IDLE, KS_PRESS } key1_state = KS_IDLE, key2_state = KS_IDLE;
+  uint32_t key1_timer = 0, key2_timer = 0;
+  const uint32_t DEBOUNCE_MS = 50;
+  const uint32_t LONG_PRESS_MS = 1000;
+
+  for(;;)
+  {
+    osDelay(10);  // 10ms 扫描周期
+
+    // ────────── KEY1 扫描 ──────────
+    GPIO_PinState k1 = HAL_GPIO_ReadPin(KEY1_PORT, KEY1_PIN);
+    switch (key1_state)
+    {
+      case KS_IDLE:
+        if (k1 == GPIO_PIN_RESET) {
+          key1_state = KS_PRESS;
+          key1_timer = 0;
+        }
+        break;
+
+      case KS_PRESS:
+        key1_timer += 10;
+        if (k1 == GPIO_PIN_SET) {          // 释放
+          if (key1_timer >= DEBOUNCE_MS && key1_timer < LONG_PRESS_MS) {
+            // 短按：锁定当前姿态
+            float cur_roll  = euler.roll;
+            float cur_pitch = euler.pitch;
+            float cur_yaw   = euler.yaw - yaw_zero_offset;
+            // 归一化到 -180~180
+            if (cur_yaw > 180.0f)  cur_yaw -= 360.0f;
+            if (cur_yaw < -180.0f) cur_yaw += 360.0f;
+            Set_Target_Angles(cur_roll, cur_pitch, cur_yaw);
+          }
+          key1_state = KS_IDLE;
+        }
+        else if (key1_timer >= LONG_PRESS_MS) {
+          key1_state = KS_IDLE;  // 长按暂不处理
+        }
+        break;
+    }
+
+    // ────────── KEY2 扫描 ──────────
+    GPIO_PinState k2 = HAL_GPIO_ReadPin(KEY2_PORT, KEY2_PIN);
+    switch (key2_state)
+    {
+      case KS_IDLE:
+        if (k2 == GPIO_PIN_RESET) {
+          key2_state = KS_PRESS;
+          key2_timer = 0;
+        }
+        break;
+
+      case KS_PRESS:
+        key2_timer += 10;
+        if (k2 == GPIO_PIN_SET) {
+          if (key2_timer >= DEBOUNCE_MS && key2_timer < LONG_PRESS_MS) {
+            // 短按：恢复默认角度（-6°, 0°, 0°）
+            Set_Target_Angles(-6.0f, 0.0f, 0.0f);
+          }
+          key2_state = KS_IDLE;
+        }
+        else if (key2_timer >= LONG_PRESS_MS) {
+          key2_state = KS_IDLE;
+        }
+        break;
+    }
+  }
+  /* USER CODE END StartKEY_Task */
 }
 
 /* Private application code --------------------------------------------------*/
