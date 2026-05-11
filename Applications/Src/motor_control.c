@@ -636,18 +636,11 @@ void Motor_Balance_Control(void)
   */
 void Set_Target_Angles(float roll_deg, float pitch_deg, float yaw_deg)
 {
-    // Roll 限幅
-    if (roll_deg > 90.0f )  roll_deg = 90.0f ;
-    if (roll_deg < 90.0f) roll_deg = 90.0f;
-    
-    // Pitch 限幅
+    if (roll_deg > 90.0f)  roll_deg = 90.0f;
+    if (roll_deg < -90.0f) roll_deg = -90.0f;
     if (pitch_deg > 45.0f)  pitch_deg = 45.0f;
     if (pitch_deg < -45.0f) pitch_deg = -45.0f;
-    
-    // Yaw 不限幅（若需要，可加入 -180～180 限幅）
-    // if (yaw_deg > 180.0f) yaw_deg = 180.0f;
-    // if (yaw_deg < -180.0f) yaw_deg = -180.0f;
-    
+
     Target_Roll_Angle  = roll_deg;
     Target_Pitch_Angle = pitch_deg;
     Target_Yaw_Angle   = yaw_deg;
@@ -681,8 +674,8 @@ void Motor_Init_All(void)
      // ---- 自动 Yaw 归零 ----
     osDelay(200);                            // 等待姿态解算稳定
     yaw_zero_offset = euler.yaw;            // 记录当前朝向作为零度
-    Target_Yaw_Angle = 0.0f;                // 默认希望保持当前朝向
-
+    // Target_Yaw_Angle = 0.0f;                // 默认希望保持当前朝向
+    Set_Target_Angles(-6.0f, 0.0f, 0.0f);   // 内部会设置 Target_Roll/Pitch/Yaw_Angle
     Balance_Mode_Enable = 1; // 初始化完成后开启自稳
 
 }

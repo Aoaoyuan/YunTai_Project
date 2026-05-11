@@ -266,8 +266,7 @@ void StartLED_Task(void *argument)
 {
   /* USER CODE BEGIN StartLED_Task */
   /* Infinite loop */
-  for(;;)
-  {
+
   uint32_t led_tick = 0;
   const uint32_t LED_PERIOD_MS = 5000;
     for(;;)
@@ -281,7 +280,7 @@ void StartLED_Task(void *argument)
         HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
       }
     }  
-  }
+  
   /* USER CODE END StartLED_Task */
 }
 
@@ -587,7 +586,7 @@ void StartKEY_Task(void *argument)
   {
     osDelay(10);  // 10ms 扫描周期
 
-    // ────────── KEY1 扫描 ──────────
+   // ══════════ KEY1 扫描 ══════════
     GPIO_PinState k1 = HAL_GPIO_ReadPin(KEY1_PORT, KEY1_PIN);
     switch (key1_state)
     {
@@ -602,14 +601,16 @@ void StartKEY_Task(void *argument)
         key1_timer += 10;
         if (k1 == GPIO_PIN_SET) {          // 释放
           if (key1_timer >= DEBOUNCE_MS && key1_timer < LONG_PRESS_MS) {
-            // 短按：锁定当前姿态
+              // 直接用映射后的当前角度，不做任何转换
             float cur_roll  = euler.roll;
             float cur_pitch = euler.pitch;
             float cur_yaw   = euler.yaw - yaw_zero_offset;
-            // 归一化到 -180~180
-            if (cur_yaw > 180.0f)  cur_yaw -= 360.0f;
-            if (cur_yaw < -180.0f) cur_yaw += 360.0f;
-            Set_Target_Angles(cur_roll, cur_pitch, cur_yaw);
+
+              // 归一化 Yaw
+              while (cur_yaw > 180.0f) cur_yaw -= 360.0f;
+              while (cur_yaw < -180.0f) cur_yaw += 360.0f;
+
+              Set_Target_Angles(cur_roll, cur_pitch, cur_yaw);
           }
           key1_state = KS_IDLE;
         }
@@ -618,7 +619,6 @@ void StartKEY_Task(void *argument)
         }
         break;
     }
-
     // ────────── KEY2 扫描 ──────────
     GPIO_PinState k2 = HAL_GPIO_ReadPin(KEY2_PORT, KEY2_PIN);
     switch (key2_state)
