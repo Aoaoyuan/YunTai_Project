@@ -52,9 +52,9 @@ float yaw_zero_offset = 0.0f;       // 上电自动标定
 // PID_TypeDef Pid_Pitch = { .Kp = 10.0f, .Ki = 0.0f, .Kd = 0.2f, .output_limit = 30.0f };
 
 // Yaw 轴 (M0)
-#define YAW_KP      30.0f
+#define YAW_KP      28.0f
 #define YAW_KI      0.0f
-#define YAW_KD      0.3f
+#define YAW_KD      00.40f
 #define YAW_INTEGRAL_LIMIT 30.0f  // 积分限幅（根据表现再放宽或收紧）
 #define YAW_OUTPUT_LIMIT 200.0f   // rad/s，根据实际响应调整
 /* === 非对称 PID 参数配置 === */
@@ -87,7 +87,7 @@ float yaw_zero_offset = 0.0f;       // 上电自动标定
 
 /* === 避障分界点 (rad) === */
 /* 障碍物位于 5.38 rad。以此值为界决定归零方向 */
-#define M2_OBSTACLE_POS 5.38f 
+#define M2_OBSTACLE_POS 5.34f 
 
 /* 归零完成的误差范围 (rad) */
 #define HOMING_TOLERANCE 0.05f

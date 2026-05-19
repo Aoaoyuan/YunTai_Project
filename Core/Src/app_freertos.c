@@ -35,14 +35,11 @@
 #include <string.h>     // 用于 memset
 #include "imu_filter.h"
 #include "motor_control.h"
+#include "24l01.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
-/* 按键引脚定义 */
-#define KEY1_PORT   GPIOC
-#define KEY1_PIN    GPIO_PIN_8
-#define KEY2_PORT   GPIOC
-#define KEY2_PIN    GPIO_PIN_7
 /* USER CODE BEGIN PTD */
 typedef struct {
     float ax, ay, az;
@@ -71,6 +68,12 @@ typedef struct {
 extern QD4310_t Motor_0;
 extern QD4310_t Motor_1;
 extern QD4310_t Motor_2;
+
+
+#define KEY1_PORT   GPIOC
+#define KEY1_PIN    GPIO_PIN_8
+#define KEY2_PORT   GPIOC
+#define KEY2_PIN    GPIO_PIN_7
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -102,6 +105,13 @@ static uint16_t calib_count = 0;
 #define STABLE_DURATION_MS    2000     // 稳定持续5秒后触发校准
 // 陀螺仪校准偏移
 float gx_offset = 0, gy_offset = 0, gz_offset = 0;
+
+
+char nrf_status[20] = "Init...";
+uint32_t nrf_packets = 0;
+uint8_t nrf_rx_data[8] = {0};  // 最近收到的前 8 字节
+uint8_t nrf_online = 0;        // 0=离线, 1=在线
+
 
 /* USER CODE END Variables */
 /* Definitions for LED_Task */
@@ -160,6 +170,13 @@ const osThreadAttr_t KEY_Task_attributes = {
   .priority = (osPriority_t) osPriorityLow,
   .stack_size = 128 * 4
 };
+/* Definitions for NRF24_Task */
+osThreadId_t NRF24_TaskHandle;
+const osThreadAttr_t NRF24_Task_attributes = {
+  .name = "NRF24_Task",
+  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 128 * 4
+};
 /* Definitions for IMU_Data_Queue */
 osMessageQueueId_t IMU_Data_QueueHandle;
 const osMessageQueueAttr_t IMU_Data_Queue_attributes = {
@@ -184,6 +201,7 @@ void StartIMU_Task(void *argument);
 void StartMotor_Control_Task(void *argument);
 void StartAttitude_Task(void *argument);
 void StartKEY_Task(void *argument);
+void StartNRF24_Task(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -245,6 +263,9 @@ void MX_FREERTOS_Init(void) {
   /* creation of KEY_Task */
   KEY_TaskHandle = osThreadNew(StartKEY_Task, NULL, &KEY_Task_attributes);
 
+  /* creation of NRF24_Task */
+  NRF24_TaskHandle = osThreadNew(StartNRF24_Task, NULL, &NRF24_Task_attributes);
+
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
@@ -271,14 +292,15 @@ void StartLED_Task(void *argument)
   const uint32_t LED_PERIOD_MS = 5000;
     for(;;)
     {
-      osDelay(100);                  // 100ms 周期
-      led_tick += 100;
+      // osDelay(100);                  // 100ms 周期
+      // led_tick += 100;
 
-      if (led_tick >= LED_PERIOD_MS)
-      {
-        led_tick = 0;
-        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
-      }
+      // if (led_tick >= LED_PERIOD_MS)
+      // {
+      //   led_tick = 0;
+      //   HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
+      // }
+      osDelay(1000);
     }  
   
   /* USER CODE END StartLED_Task */
@@ -311,6 +333,10 @@ void StartOLED_Task(void *argument)
 
   OLED_ShowString(0,32,"Y:",OLED_8X16);
   OLED_ShowFloatNum(16,32,euler.yaw,2,1,OLED_8X16);
+
+  // 显示 NRF24L01 状态和接收包数
+OLED_ShowString(72,0,"NRF:",OLED_8X16);
+OLED_ShowString(104,0,nrf_status,OLED_8X16);   // 显示状态
   // 刷新屏幕
   OLED_Update();
   }
@@ -454,7 +480,7 @@ void StartAttitude_Task(void *argument)
 {
   /* USER CODE BEGIN StartAttitude_Task */
   // osDelay(1000); // 等待系统稳定
-  Mahony_Init(15.0f, 0.0f);
+  Mahony_Init(10.0f, 0.0f);
   IMU_Data_t imu;
   for(;;)
   {
@@ -646,6 +672,53 @@ void StartKEY_Task(void *argument)
     }
   }
   /* USER CODE END StartKEY_Task */
+}
+
+/* USER CODE BEGIN Header_StartNRF24_Task */
+/**
+* @brief Function implementing the NRF24_Task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartNRF24_Task */
+void StartNRF24_Task(void *argument)
+{
+  /* USER CODE BEGIN StartNRF24_Task */
+  
+ uint8_t rxbuf[32];
+  
+  // 初始化
+  NRF24L01_CE_0;
+  NRF24L01_CSN_1;
+  osDelay(10);
+  
+  if (NRF24L01_Check() != 0)
+  {
+    strcpy(nrf_status, "FAIL");
+    for(;;)
+    {
+      HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
+      osDelay(100);
+    }
+  }
+  
+  strcpy(nrf_status, "OK");
+  NRF24L01_RX_Mode();
+  
+  for(;;)
+  {
+    if (NRF24L01_IRQ == GPIO_PIN_RESET)
+    {
+      if (NRF24L01_RxPacket(rxbuf) == 0)
+      {
+        nrf_packets++;
+        strcpy(nrf_status, "RX");
+        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_6);
+      }
+    }
+    osDelay(5);
+  }
+  /* USER CODE END StartNRF24_Task */
 }
 
 /* Private application code --------------------------------------------------*/

@@ -1,18 +1,7 @@
 #ifndef __24L01_H
 #define __24L01_H
 #include "stm32g4xx.h"
-//////////////////////////////////////////////////////////////////////////////////	 
-//本程序只供学习使用，未经作者许可，不得用于其它任何用途
-//ALIENTEK STM32F407开发板
-//NRF24L01驱动代码	   
-//正点原子@ALIENTEK
-//技术论坛:www.openedv.com
-//创建日期:2017/4/15
-//版本：V1.0
-//版权所有，盗版必究。
-//Copyright(C) 广州市星翼电子科技有限公司 2014-2024
-//All rights reserved									  
-////////////////////////////////////////////////////////////////////////////////// 	
+	
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 //NRF24L01寄存器操作命令
@@ -62,7 +51,7 @@
 #define NRF24L01_CE_1     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);  //24L01模式选择
 #define NRF24L01_CSN_0    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);  //SPI片选信号	 
 #define NRF24L01_CSN_1    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);  //SPI片选信号	
-#define NRF24L01_IRQ    	HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_2)   //IRQ主机数据输入
+#define NRF24L01_IRQ        HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_2)   //IRQ主机数据输入
 //#define NRF24L01_CE_0     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, GPIO_PIN_RESET);  //24L01模式选择
 //#define NRF24L01_CE_1     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, GPIO_PIN_SET);  //24L01模式选择
 //#define NRF24L01_CSN_0    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_RESET);  //SPI片选信号	 
